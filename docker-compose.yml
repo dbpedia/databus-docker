@@ -1,0 +1,64 @@
+version: "3.0"
+name: "databus-dockerized"
+services:
+  databus:
+    image: dbpedia/databus:dev
+    ports:
+      - 3000:3000
+    environment:
+      DATABUS_RESOURCE_BASE_URL: ${DATABUS_RESOURCE_BASE_URL}
+      DATABUS_DATABASE_URL: "http://gstore:8080"
+      LOOKUP_BASE_URL: "http://lookup:8080"
+      DATABUS_OIDC_ISSUER_BASE_URL: ${DATABUS_OIDC_ISSUER_BASE_URL}
+      DATABUS_NAME: ${DATABUS_NAME}
+      DATABUS_ABSTRACT: ${DATABUS_ABSTRACT}
+      DATABUS_ORG_ICON: ${DATABUS_ORG_ICON}
+      DATABUS_BANNER_COLOR: ${DATABUS_BANNER_COLOR}
+      DATABUS_OIDC_CLIENT_ID: ${DATABUS_OIDC_CLIENT_ID}
+      DATABUS_OIDC_SECRET: ${DATABUS_OIDC_SECRET}
+      DATABUS_PRIVATE_MODE: ${DATABUS_PRIVATE_MODE} 
+      METRICS_PORT: 3001
+    volumes:
+      - ./data/dav/:/databus/server/dav/
+      - ./data/sqlite/:/databus/server/sqlite
+      - ./data/keypair/:/databus/server/keypair
+  gstore:
+    image: dbpedia/gstore:dev
+    environment:
+      STORAGE_USER: ${VIRTUOSO_USER}
+      STORAGE_PASS:  ${VIRTUOSO_PASSWORD}
+      STORAGE_SPARQL_ENDPOINT_URI: http://virtuoso:8890/sparql
+      DEFAULT_JSONLD_LOCALHOST_CONTEXT: http://localhost:5000/res/context.jsonld
+      DEFAULT_JSONLD_LOCALHOST_CONTEXT_LOCATION: https://databus.dbpedia.org/res/context.jsonld
+    volumes:
+      - ./data/gstore/repo:/gstore/git
+      - ./data/gstore/logs:/gstore/logs
+  lookup:
+    image: dbpedia/lookup:dev
+    volumes:
+      - ./data/index/:/index
+      - ./search-config.yml:/resources/config.yml
+  virtuoso:
+    image: openlink/virtuoso-opensource-7
+    environment:
+      DBA_PASSWORD: ${VIRTUOSO_PASSWORD}
+      SPARQL_UPDATE: "true"
+      DEFAULT_GRAPH: ${DATABUS_RESOURCE_BASE_URL}
+    volumes:
+      - ./data/virtuoso:/database
+    entrypoint: /bin/bash -c "
+        echo 'grant SPARQL_LOAD_SERVICE_DATA to \"SPARQL\";' > /opt/virtuoso-opensource/initdb.d/ini.sql &&
+        echo 'grant SPARQL_SPONGE to \"SPARQL\";' >> /opt/virtuoso-opensource/initdb.d/ini.sql &&
+        echo 'grant SPARQL_SELECT_FED to \"SPARQL\";' > /opt/virtuoso-opensource/initdb.d/ini.sql &&
+        /virtuoso-entrypoint.sh"
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "3002:9090"
+    volumes:
+      - ./data/prometheus:/prometheus
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"  
+    restart: unless-stopped
